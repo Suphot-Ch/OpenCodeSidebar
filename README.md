@@ -36,12 +36,12 @@ opencode --version
 ### 2. Install the Extension
 Install the generated `.vsix` file:
 ```bash
-code --install-extension opencode-sidebar-0.3.1.vsix
+code --install-extension opencode-sidebar-0.3.2.vsix
 ```
 *Or in VS Code:*
 1. Open the Extensions view (`Ctrl+Shift+X`).
 2. Click the `...` menu in the top right of the Extensions panel.
-3. Select **Install from VSIX...** and choose `opencode-sidebar-0.3.1.vsix`.
+3. Select **Install from VSIX...** and choose `opencode-sidebar-0.3.2.vsix`.
 
 ### 3. Open OpenCode in the Sidebar
 1. Click the **OpenCode** icon on the Activity Bar (left strip).
@@ -76,6 +76,10 @@ You can customize these in VS Code Settings (`Ctrl+,` -> search **OpenCode**):
 1. Update to 0.3.1, save your files, then reload **all** VS Code windows running OpenCode Sidebar. An old window may still own the shared bridge.
 2. Open OpenCode Sidebar and use **OpenCode: Auto Pair (Refresh Auth)** if necessary.
 3. If connection fails, run **OpenCode: Show Output Logs**. Do not share `savedCookie` or pairing URLs.
+
+### Connected but sending prompts reports Authentication required
+
+Update to 0.3.2 and reload VS Code. Older bridges forwarded the loopback browser Origin unchanged to the upstream OpenCode server. Cookie-authenticated POST requests failed the server's Origin checks even when GET health checks worked. Pairing again did not fix that mismatch. Version 0.3.2 validates the local browser Origin before translating it to the upstream Origin, and refuses to reuse an older incompatible bridge. It does not disable OpenCode authentication or change the server's CORS configuration.
 
 ---
 

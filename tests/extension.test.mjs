@@ -5,6 +5,75 @@ import { validateUrl, redactSecrets } from '../dist/lib/security.js';
 import { PairingController } from '../dist/lib/pairingController.js';
 import { LocalBridge } from '../dist/lib/localBridge.js';
 
+test('localBridge: browser POST forwards trusted origin as upstream origin', async t => {
+  const backend = http.createServer((req, res) => {
+    if (req.headers.origin !== `http://${req.headers.host}`) {
+      res.writeHead(401);
+      res.end('Authentication required');
+      return;
+    }
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ cookie: req.headers.cookie, body }));
+    });
+  });
+  await new Promise(resolve => backend.listen(0, '127.0.0.1', resolve));
+  const bridge = new LocalBridge(() => {});
+  t.after(async () => { await bridge.stop(); backend.close(); });
+  const info = await bridge.start(new URL(`http://127.0.0.1:${backend.address().port}`), 0);
+  bridge.setSessionCookie('opencode_session_9999=valid');
+  const response = await fetch(`${info.proxyUrl}/api/session/example/prompt`, {
+    method: 'POST',
+    headers: { origin: info.proxyUrl, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: 'mock-only prompt' }),
+  });
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.cookie, 'opencode_session_9999=valid');
+  assert.deepEqual(JSON.parse(result.body), { text: 'mock-only prompt' });
+});
+
+test('localBridge: rejects foreign browser origins before forwarding requests', async t => {
+  let forwarded = 0;
+  const backend = http.createServer((_req, res) => { forwarded++; res.end('ok'); });
+  await new Promise(resolve => backend.listen(0, '127.0.0.1', resolve));
+  const bridge = new LocalBridge(() => {});
+  t.after(async () => { await bridge.stop(); backend.close(); });
+  const info = await bridge.start(new URL(`http://127.0.0.1:${backend.address().port}`), 0);
+  for (const path of ['/api/session/example/prompt', '/bridge/sync-cookie']) {
+    const response = await fetch(`${info.proxyUrl}${path}`, {
+      method: 'POST', headers: { origin: 'https://untrusted.example' }, body: '{}',
+    });
+    assert.equal(response.status, 403);
+    await response.body.cancel();
+  }
+  assert.equal(forwarded, 0);
+});
+
+test('localBridge: reuses compatible bridges but never legacy or different-target bridges', async t => {
+  const backend = http.createServer((_req, res) => res.end('ok'));
+  const legacy = http.createServer((_req, res) => res.end('{"version":"old"}'));
+  await new Promise(resolve => backend.listen(0, '127.0.0.1', resolve));
+  await new Promise(resolve => legacy.listen(0, '127.0.0.1', resolve));
+  const bridges = Array.from({ length: 4 }, () => new LocalBridge(() => {}));
+  t.after(async () => {
+    for (const bridge of bridges.reverse()) await bridge.stop();
+    backend.close();
+    legacy.close();
+  });
+  const target = new URL(`http://127.0.0.1:${backend.address().port}`);
+  const first = await bridges[0].start(target, 0);
+  const shared = await bridges[1].start(target, first.port);
+  assert.equal(shared.reused, true);
+  assert.equal(shared.port, first.port);
+  const wrongTarget = await bridges[2].start(new URL('http://127.0.0.1:1'), first.port);
+  assert.notEqual(wrongTarget.port, first.port);
+  const old = await bridges[3].start(target, legacy.address().port);
+  assert.notEqual(old.port, legacy.address().port);
+});
+
 test('localBridge: restarting and stopping with an open SSE stream completes', { timeout: 4000 }, async (t) => {
   const backend = http.createServer((_req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/event-stream' });

@@ -238,6 +238,13 @@ export class OpenCodeSidebarProvider implements vscode.WebviewViewProvider {
 
     const bridge = await this.bounded(this.localBridge.start(targetBaseUrl, bridgePort), 10000, 'Connecting sidebar bridge');
 
+    // Connected means the authenticated bridge works, not just that it listens.
+    const health = await fetch(`${bridge.proxyUrl}/api/info`, { signal: AbortSignal.timeout(5000) });
+    await health.body?.cancel();
+    if (!health.ok && !connectPath?.startsWith('/auth/connect/')) {
+      throw new Error(`Sidebar bridge authentication check failed (HTTP ${health.status})`);
+    }
+
     const initialPath = connectPath || '/';
     this.activeIframeUrl = `${bridge.proxyUrl}${initialPath}`;
 

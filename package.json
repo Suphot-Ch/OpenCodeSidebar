@@ -2,7 +2,7 @@
   "name": "opencode-sidebar",
   "displayName": "OpenCode Sidebar",
   "description": "OpenCode Web UI inside VS Code Sidebar (completely separate from Terminal)",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "publisher": "local-dev",
   "icon": "media/icon.png",
   "repository": {

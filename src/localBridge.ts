@@ -1,7 +1,10 @@
 import http from 'node:http';
+import https from 'node:https';
 import net from 'node:net';
 import stream from 'node:stream';
 import { redactSecrets } from './security';
+
+const BRIDGE_PROTOCOL_VERSION = 2;
 
 export interface BridgeInfo {
   port: number;
@@ -57,11 +60,12 @@ export class LocalBridge {
         // Port is in use, check if it is our bridge running in another VS Code window
         this.logger(`[Bridge] Port ${preferredPort} is in use. Checking if another workspace bridge is alive...`);
         try {
-          const check = await fetch(`http://127.0.0.1:${preferredPort}/api/info`, {
+          const check = await fetch(`http://127.0.0.1:${preferredPort}/bridge/info`, {
             signal: AbortSignal.timeout(3000),
           });
-          await check.body?.cancel();
-          if (check.status === 200 || check.status === 401) {
+          const metadata = await check.json() as { name?: string; version?: number; target?: string };
+          if (check.ok && metadata.name === 'opencode-sidebar' &&
+              metadata.version === BRIDGE_PROTOCOL_VERSION && metadata.target === target.origin) {
             this.port = preferredPort;
             const proxyUrl = `http://127.0.0.1:${this.port}`;
             this.logger(`[Bridge] Existing bridge found on ${proxyUrl}. Reusing shared bridge.`);
@@ -148,7 +152,18 @@ export class LocalBridge {
   }
 
   private handleHttpRequest(req: http.IncomingMessage, res: http.ServerResponse): void {
+    if (!this.isTrustedRequest(req)) {
+      res.writeHead(403, { 'Content-Type': 'text/plain' });
+      res.end('Untrusted bridge host or browser origin');
+      return;
+    }
     const clientUrl = new URL(req.url || '/', `http://127.0.0.1:${this.port}`);
+
+    if (clientUrl.pathname === '/bridge/info' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify({ name: 'opencode-sidebar', version: BRIDGE_PROTOCOL_VERSION, target: this.targetUrl?.origin }));
+      return;
+    }
 
     // Internal endpoint for syncing cookies between windows
     if (clientUrl.pathname === '/bridge/sync-cookie' && req.method === 'POST') {
@@ -181,10 +196,12 @@ export class LocalBridge {
     delete headers.host;
 
     headers.cookie = this.authenticatedCookie(String(headers.cookie || ''));
+    this.rewriteBrowserHeaders(headers);
 
     const targetPort = this.targetUrl.port ? parseInt(this.targetUrl.port, 10) : (this.targetUrl.protocol === 'https:' ? 443 : 80);
 
-    const proxyReq = http.request(
+    const transport = this.targetUrl.protocol === 'https:' ? https : http;
+    const proxyReq = transport.request(
       {
         protocol: this.targetUrl.protocol,
         hostname: this.targetUrl.hostname,
@@ -232,9 +249,10 @@ export class LocalBridge {
             .replace(/frame-ancestors[^;]+;?/gi, '');
         }
 
-        // Allow CORS for local loopback
-        responseHeaders['access-control-allow-origin'] = '*';
-        responseHeaders['access-control-allow-credentials'] = 'true';
+        // The browser talks same-origin to the bridge. Do not expose its
+        // authenticated responses to arbitrary websites with permissive CORS.
+        delete responseHeaders['access-control-allow-origin'];
+        delete responseHeaders['access-control-allow-credentials'];
 
         res.writeHead(proxyRes.statusCode || 200, responseHeaders);
         proxyRes.pipe(res);
@@ -255,7 +273,7 @@ export class LocalBridge {
   }
 
   private handleUpgrade(req: http.IncomingMessage, clientSocket: stream.Duplex, head: Buffer): void {
-    if (!this.targetUrl) {
+    if (!this.targetUrl || !this.isTrustedRequest(req)) {
       clientSocket.destroy();
       return;
     }
@@ -271,6 +289,7 @@ export class LocalBridge {
     }
     headers['host'] = `${this.targetUrl.hostname}:${targetPort}`;
     headers.cookie = this.authenticatedCookie(headers.cookie || '');
+    this.rewriteBrowserHeaders(headers);
 
     const headerLines = [
       `${req.method} ${clientUrl.pathname}${clientUrl.search} HTTP/${req.httpVersion}`,
@@ -310,5 +329,29 @@ export class LocalBridge {
     const otherCookies = incoming.split(';').map(part => part.trim())
       .filter(part => part && !/^opencode_session_\d+=/.test(part));
     return [...otherCookies, this.sessionCookie].join('; ');
+  }
+
+  private isTrustedRequest(req: http.IncomingMessage): boolean {
+    if (req.headers.host !== `127.0.0.1:${this.port}`) return false;
+    const origin = req.headers.origin;
+    return origin === undefined || origin === this.getProxyUrl();
+  }
+
+  private rewriteBrowserHeaders(headers: http.OutgoingHttpHeaders): void {
+    // Only called after validating the original browser Origin against this
+    // bridge. Preserve OpenCode's own cookie/CSRF checks rather than disabling them.
+    if (headers.origin) headers.origin = this.targetUrl!.origin;
+    if (typeof headers.referer === 'string') {
+      try {
+        const referer = new URL(headers.referer);
+        if (referer.origin === this.getProxyUrl()) {
+          headers.referer = `${this.targetUrl!.origin}${referer.pathname}${referer.search}`;
+        } else {
+          delete headers.referer;
+        }
+      } catch {
+        delete headers.referer;
+      }
+    }
   }
 }
