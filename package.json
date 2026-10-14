@@ -1,0 +1,167 @@
+{
+  "name": "opencode-sidebar",
+  "displayName": "OpenCode Sidebar",
+  "description": "OpenCode Web UI inside VS Code Sidebar (completely separate from Terminal)",
+  "version": "0.3.1",
+  "publisher": "local-dev",
+  "icon": "media/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Suphot-Ch/OpenCodeSidebar.git"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "AI",
+    "Chat",
+    "Other"
+  ],
+  "activationEvents": [
+    "onView:opencode.sidebarView"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "opencode-sidebar-container",
+          "title": "OpenCode",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "opencode-sidebar-container": [
+        {
+          "type": "webview",
+          "id": "opencode.sidebarView",
+          "name": "OpenCode",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "opencode.autoPair",
+        "title": "Auto Pair (Refresh Auth)",
+        "category": "OpenCode",
+        "icon": "$(zap)"
+      },
+      {
+        "command": "opencode.syncWorkspace",
+        "title": "Sync Workspace Project",
+        "category": "OpenCode",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "opencode.connect",
+        "title": "Connect to OpenCode",
+        "category": "OpenCode"
+      },
+      {
+        "command": "opencode.disconnect",
+        "title": "Disconnect OpenCode",
+        "category": "OpenCode"
+      },
+      {
+        "command": "opencode.reload",
+        "title": "Reload View",
+        "category": "OpenCode",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "opencode.pastePairingUrl",
+        "title": "Paste Pairing URL...",
+        "category": "OpenCode",
+        "icon": "$(link)"
+      },
+      {
+        "command": "opencode.openInBrowser",
+        "title": "Open in Browser",
+        "category": "OpenCode",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "opencode.showOutput",
+        "title": "Show Output Logs",
+        "category": "OpenCode"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "opencode.autoPair",
+          "when": "view == opencode.sidebarView",
+          "group": "navigation@1"
+        },
+        {
+          "command": "opencode.syncWorkspace",
+          "when": "view == opencode.sidebarView",
+          "group": "navigation@2"
+        },
+        {
+          "command": "opencode.reload",
+          "when": "view == opencode.sidebarView",
+          "group": "navigation@3"
+        },
+        {
+          "command": "opencode.openInBrowser",
+          "when": "view == opencode.sidebarView",
+          "group": "navigation@4"
+        },
+        {
+          "command": "opencode.pastePairingUrl",
+          "when": "view == opencode.sidebarView",
+          "group": "navigation@5"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "OpenCode Sidebar",
+      "properties": {
+        "opencode.executablePath": {
+          "type": "string",
+          "default": "opencode",
+          "description": "Path or command name for the OpenCode CLI executable."
+        },
+        "opencode.autoConnect": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically connect to the local OpenCode service when the sidebar is opened."
+        },
+        "opencode.bridgePort": {
+          "type": "number",
+          "default": 49375,
+          "description": "Local bridge port. Keeping a fixed port allows multiple VS Code windows and workspaces to share the same session and Web UI settings."
+        },
+        "opencode.serverUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Custom OpenCode service URL. If blank, auto-detected from 'opencode service status'."
+        },
+        "opencode.savedCookie": {
+          "type": "string",
+          "default": "",
+          "description": "Remembered session cookie from OpenCode. Saved globally in VS Code settings so all workspaces stay connected without pairing again."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build:prod",
+    "compile": "tsc --noEmit",
+    "build": "node esbuild.mjs",
+    "build:prod": "node esbuild.mjs --production",
+    "watch": "node esbuild.mjs --watch",
+    "package": "vsce package --no-dependencies",
+    "test": "node --test tests/**/*.test.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.0",
+    "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^3.2.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.8.3"
+  }
+}
